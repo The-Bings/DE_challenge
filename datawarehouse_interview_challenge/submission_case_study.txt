@@ -1,0 +1,105 @@
+1.	This Kafka message is an event-tracking message used for analytics, capturing user interactions or system events within Lalamove app. The payload contains detailed metadata about the user, device, network, application, and event-specific details in order to track user behavior, monitor app performance and user experience and support analytics for business insights, such as user demographics, geographic trends, or feature usage.
+The message is triggered by a specific user action or system event in the app, such as deliver location when user selecting a point of interest (b_poi_select), update a location (onLocationChanged), as indicated by arg3 and the event is captured by an SDK (e.g., sdkVer: guapp-1.0.1.39) integrated into the app, which logs the event and sends it to Kafka.
+The app’s SDK collects the event data and sends it to a Kafka producer. Then, the producer publishes the message to a Kafka topic (user_events or location_events). Lastly, Kafka brokers store the message in the topic’s partitions, where it can be consumed by downstream systems (analytics pipelines, data warehouses) for processing.
+
+2.	Event ID: A unique identifier for the event
+Session ID: correlate multiple events
+User ID: tie events to specific users
+Event Category: group related events
+Error Status: aid debugging when a failure is represented
+Client Timestamp: The exact time the event occurred to account for delays
+
+3.	Use consistent prefixes (remove $ from attributes for uniformity).
+Adopt camelCase or snake case consistently
+Use a schema registry
+
+4.	I selected PostgreSQL which is a popular, open-source relational database.
+String Processing: Store the Kafka message as a JSONB column, which allows efficient querying and indexing. For frequently queried fields, extract them into separate columns for faster access. Use PostgreSQL’s full-text search on JSONB data for advanced querying.
+JSONB: 
+•	Pros: Flexible schema, no need to predefined columns, supports complex queries, efficient with GIN indexes.
+•	Cons: Slower for simple queries compared to normalized columns, larger storage due to JSONB overhead.
+Extracted Columns: 
+•	Pros: Faster queries for common fields, simpler SQL, better for reporting.
+•	Cons: Less flexible, requires schema updates if new fields are added.
+Full-Text Search: 
+•	Pros: Powerful for searching across all JSON fields, good for ad-hoc analysis.
+•	Cons: Not ideal for structured queries, higher CPU usage for indexing.
+
+5.	Standardized Schema:
+{
+  "schema_version": "1.0",
+  "event_id": "uuid-1234-5678-9012",
+  "session_id": "session-9876-5432",
+  "trigger_time": "2025-04-11T06:27:38Z",
+  "user": {
+    "user_type": "personal_user",
+    "aaid": "11111111-2222-3333-4444-f0f355df5b6b",
+    "is_login_id": true
+  },
+  "device": {
+    "os": "Android",
+    "os_version": "14",
+    "model": "SM-A047F",
+    "manufacturer": "SAMSUNG",
+    "screen_height": 1600,
+    "screen_width": 720
+  },
+  "network": {
+    "wifi": true,
+    "network_type": "WIFI",
+    "ip": "111.222.333.444"
+  },
+  "location": {
+    "country": "PH",
+    "province": "马尼拉都会区",
+    "city": "帕西市",
+    "country_id": "50000",
+    "city_id": "51001"
+  },
+  "app": {
+    "app_id": "hk.xxxxxx.app.client",
+    "app_name": "Lalamove",
+    "app_version": "113.0.0",
+    "lib": "Android",
+    "lib_version": "6.3.5.5",
+    "sdk_version": "guapp-1.0.1.39"
+  },
+  "event": {
+    "name": "b_poi_select",
+    "category": "location",
+    "status": "success",
+    "properties": {
+      "arg2": "8",
+      "arg3": "onLocationChanged"
+    }
+  },
+  "context": {
+    "referrer_title": "Lalamove",
+    "global_source": "android",
+    "data_center": "SIN",
+    "env": "prd",
+    "timezone_offset": -480
+  }
+}
+
+Database Schema:
+CREATE TABLE standardized_events (
+  event_id String,
+  session_id String,
+  trigger_time DateTime,
+  user_type String,
+  aaid String,
+  os String,
+  os_version String,
+  country String,
+  city String,
+  app_version String,
+  event_name String,
+  event_category String,
+  event_status String,
+  event_properties JSON,
+  context JSON
+)
+ENGINE = MergeTree()
+PARTITION BY toDate(trigger_time)
+ORDER BY (trigger_time, country);
